@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YT Lite</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="titlebar">
+    <div id="tabs-container">
+      <div id="tabs"></div>
+      <button id="new-tab-btn" title="New Tab">+</button>
+    </div>
+    <div id="window-controls">
+      <button id="btn-min" title="Minimize">─</button>
+      <button id="btn-max" title="Maximize">□</button>
+      <button id="btn-close" title="Close">✕</button>
+    </div>
+  </div>
+
+  <div id="navbar">
+    <button id="btn-back" title="Back">‹</button>
+    <button id="btn-forward" title="Forward">›</button>
+    <button id="btn-reload" title="Reload">↻</button>
+    <button id="btn-home" title="Home">⌂</button>
+    <input id="url-bar" type="text" value="https://www.youtube.com" spellcheck="false" />
+    <button id="btn-fullscreen" title="Fullscreen">⛶</button>
+  </div>
+
+  <div id="webviews"></div>
+
+  <script src="main.js"></script>
+</body>
+</html>
