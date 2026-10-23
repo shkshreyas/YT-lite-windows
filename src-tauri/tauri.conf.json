@@ -1,14 +1,20 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "YT Lite",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "identifier": "com.ytlite.desktop",
-  "build": {},
+  "build": {
+    "frontendDist": "../src"
+  },
   "app": {
     "withGlobalTauri": true,
     "windows": [],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
     }
   },
   "bundle": {
