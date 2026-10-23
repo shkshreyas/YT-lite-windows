@@ -33,7 +33,7 @@ fn make_tab(app: &AppHandle, id: &str, url: &str) -> tauri::Result<()> {
         .title("YT Lite")
         .inner_size(1280.0, 800.0)
         .min_inner_size(800.0, 500.0)
-        .decorations(false)
+        .decorations(true)
         .user_agent(UA)
         .initialization_script(&script)
         .build()?;

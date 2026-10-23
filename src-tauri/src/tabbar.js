@@ -52,14 +52,6 @@
       display:flex;align-items:center;justify-content:center;flex-shrink:0;
     }
     #__ytl_new__:hover { background:#222;color:#ccc; }
-    #__ytl_wc__ { display:flex;gap:1px;margin-left:auto;flex-shrink:0; }
-    #__ytl_wc__ button {
-      width:30px;height:28px;border:none;background:transparent;
-      color:#666;font-size:13px;cursor:pointer;border-radius:6px;
-      display:flex;align-items:center;justify-content:center;
-    }
-    #__ytl_wc__ button:hover { background:#222;color:#ccc; }
-    #__ytl_close__:hover { background:#c42b1c!important;color:#fff!important; }
     ytd-app, #page-manager { padding-top:38px!important; }
     #masthead-container { top:38px!important; }
     :fullscreen #__ytl_bar__, :-webkit-full-screen #__ytl_bar__ { display:none!important; }
@@ -76,11 +68,6 @@
     </div>
     <div id="__ytl_tabs__"></div>
     <button id="__ytl_new__" title="New tab (Ctrl+T)">+</button>
-    <div id="__ytl_wc__">
-      <button id="__ytl_min__" title="Minimize">&#x2014;</button>
-      <button id="__ytl_max__" title="Maximize">&#x25A1;</button>
-      <button id="__ytl_close__" title="Close">&#x2715;</button>
-    </div>
   `;
 
   /* ── Render tab list ── */
@@ -141,18 +128,6 @@
     if ((e.ctrlKey || e.metaKey) && e.key === 't') { e.preventDefault(); T && T.invoke('new_tab'); }
     if (e.key === 'F11') { e.preventDefault(); toggleFs(); }
     if (e.key === 'Escape') { document.fullscreenElement && document.exitFullscreen(); }
-  });
-
-  document.getElementById('__ytl_min__').addEventListener('click', function () {
-    WIN && WIN.getCurrentWindow().minimize();
-  });
-  document.getElementById('__ytl_max__').addEventListener('click', function () {
-    if (!WIN) return;
-    var w = WIN.getCurrentWindow();
-    w.isMaximized().then(function (max) { max ? w.unmaximize() : w.maximize(); });
-  });
-  document.getElementById('__ytl_close__').addEventListener('click', function () {
-    T && T.invoke('close_tab', { id: TAB_ID });
   });
 
   function toggleFs() {
