@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{command, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use serde::{Deserialize, Serialize};
 
+
 const ADBLOCK: &str = include_str!("adblock.js");
 const TABBAR: &str  = include_str!("tabbar.js");
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \

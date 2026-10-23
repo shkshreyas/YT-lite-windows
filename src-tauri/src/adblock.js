@@ -48,12 +48,22 @@
     try { return NET_BLOCK.some(r => r.test(url)); } catch { return false; }
   }
 
-  // Patch fetch
-  const _fetch = window.fetch;
+  // Patch fetch — single wrap handles both ad blocking AND player response pruning
+  const _origFetch = window.fetch;
   window.fetch = function (input, init) {
     const url = typeof input === 'string' ? input : (input && input.url) || '';
+    // Block ad network requests outright
     if (isAdURL(url)) return Promise.resolve(new Response('', { status: 200 }));
-    return _fetch.apply(this, arguments);
+    // Intercept YouTube InnerTube player API — strip adPlacements from response
+    if (url.includes('/youtubei/v1/player')) {
+      return _origFetch.apply(this, arguments).then(function(res) {
+        return res.clone().json().then(function(json) {
+          prunePlayerResponse(json);
+          return new Response(JSON.stringify(json), { status: res.status, statusText: res.statusText });
+        }).catch(function() { return res; });
+      });
+    }
+    return _origFetch.apply(this, arguments);
   };
 
   // Patch XHR
@@ -375,29 +385,5 @@
   }
   setInterval(skipAd, 150);
 
-  /* ═══════════════════════════════════════════════════════════════════════
-   * 6. YOUTUBE INNERTUBE API PATCH
-   *    Intercept fetch calls to /youtubei/v1/player and strip ad data
-   * ═══════════════════════════════════════════════════════════════════════ */
-  const _fetchFinal = window.fetch;
-  window.fetch = function (input, init) {
-    const url = typeof input === 'string' ? input : (input && input.url) || '';
-    if (isAdURL(url)) return Promise.resolve(new Response('', { status: 200 }));
-
-    // Intercept player API response to strip ads
-    if (url.includes('/youtubei/v1/player') || url.includes('/youtubei/v1/next')) {
-      return _fetchFinal.apply(this, arguments).then(res => {
-        const clone = res.clone();
-        return clone.json().then(json => {
-          prunePlayerResponse(json);
-          return new Response(JSON.stringify(json), {
-            status: res.status,
-            headers: res.headers,
-          });
-        }).catch(() => res);
-      });
-    }
-    return _fetchFinal.apply(this, arguments);
-  };
 
 })();
