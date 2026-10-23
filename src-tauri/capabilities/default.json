@@ -1,8 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Chrome tab bar permissions",
-  "windows": ["chrome"],
+  "description": "YouTube tab windows",
+  "windows": ["yt-*", "yt-1"],
+  "remote": {
+    "urls": ["https://*.youtube.com", "https://youtube.com"]
+  },
   "permissions": [
     "core:default",
     "core:window:allow-minimize",

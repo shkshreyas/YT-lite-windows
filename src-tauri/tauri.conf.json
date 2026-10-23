@@ -3,9 +3,7 @@
   "productName": "YT Lite",
   "version": "1.2.0",
   "identifier": "com.ytlite.desktop",
-  "build": {
-    "frontendDist": "../src"
-  },
+  "build": {},
   "app": {
     "withGlobalTauri": true,
     "windows": [],
@@ -23,6 +21,9 @@
     "icon": [
       "icons/icon.ico",
       "icons/icon.png"
-    ]
+    ],
+    "resources": {
+      "ext/ublock/uBlock0.chromium": "ext/ublock/uBlock0.chromium"
+    }
   }
 }
