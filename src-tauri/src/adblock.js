@@ -1,15 +1,16 @@
 /**
- * YT Lite – uBlock Origin-grade ad blocking for YouTube
- * Runs as an initialization_script (before any page JS) for maximum effectiveness.
+ * YT Lite – Full uBlock Origin scriptlets + EasyList cosmetic filters for YouTube
+ * Sources: uBlock Origin uAssets (GPLv3), EasyList (CC BY-SA 3.0), EasyPrivacy
+ * Runs as initialization_script — executes BEFORE any YouTube JS.
  */
 (function () {
   'use strict';
   if (window.__ytlite_adblock__) return;
   window.__ytlite_adblock__ = true;
 
-  /* ─────────────────────────────────────────────────────────────────────────
-   * 1. NETWORK FILTER – block ad requests at XHR / fetch / beacon level
-   * ───────────────────────────────────────────────────────────────────────── */
+  /* ═══════════════════════════════════════════════════════════════════════
+   * 1. NETWORK FILTER  (uBlock: youtube.com##, EasyList network rules)
+   * ═══════════════════════════════════════════════════════════════════════ */
   const NET_BLOCK = [
     /youtube\.com\/api\/stats\/ads/,
     /youtube\.com\/api\/stats\/qoe\?adformat/,
@@ -20,6 +21,8 @@
     /youtube\.com\/youtubei\/v1\/player\/ad_break/,
     /youtube\.com\/youtubei\/v1\/initiated_playback/,
     /youtube\.com\/generate_204\?/,
+    /youtube\.com\/set_awesome/,
+    /youtube\.com\/api\/stats\/watchtime\?ad/,
     /doubleclick\.net/,
     /googlesyndication\.com/,
     /googleadservices\.com/,
@@ -32,23 +35,30 @@
     /adnxs\.com/,
     /scorecardresearch\.com/,
     /2mdn\.net/,
+    /imasdk\.googleapis\.com/,
+    /static\.doubleclick\.net/,
+    /securepubads\.g\.doubleclick\.net/,
+    /pubads\.g\.doubleclick\.net/,
+    /tpc\.googlesyndication\.com/,
+    /partner\.googleadservices\.com/,
   ];
 
   function isAdURL(url) {
     if (!url) return false;
-    try { return NET_BLOCK.some(r => r.test(url)); }
-    catch { return false; }
+    try { return NET_BLOCK.some(r => r.test(url)); } catch { return false; }
   }
 
+  // Patch fetch
   const _fetch = window.fetch;
   window.fetch = function (input, init) {
-    const url = (typeof input === 'string') ? input : (input && input.url) || '';
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
     if (isAdURL(url)) return Promise.resolve(new Response('', { status: 200 }));
     return _fetch.apply(this, arguments);
   };
 
+  // Patch XHR
   const _xhrOpen = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function (method, url) {
+  XMLHttpRequest.prototype.open = function (m, url) {
     if (isAdURL(String(url))) this._ytlBlocked = true;
     return _xhrOpen.apply(this, arguments);
   };
@@ -58,6 +68,7 @@
     return _xhrSend.apply(this, arguments);
   };
 
+  // Patch sendBeacon
   if (navigator.sendBeacon) {
     const _beacon = navigator.sendBeacon.bind(navigator);
     navigator.sendBeacon = function (url) {
@@ -66,11 +77,117 @@
     };
   }
 
-  /* ─────────────────────────────────────────────────────────────────────────
-   * 2. COSMETIC FILTER – hide ad elements via CSS + aggressive DOM removal
-   * ───────────────────────────────────────────────────────────────────────── */
-  const CSS_RULES = `
-    /* Video player overlay ads */
+  /* ═══════════════════════════════════════════════════════════════════════
+   * 2. SCRIPTLETS  (uBlock Origin scriptlets ported to JS)
+   * ═══════════════════════════════════════════════════════════════════════ */
+
+  // json-prune: strip ad fields from ytInitialPlayerResponse
+  function prunePlayerResponse(val) {
+    if (!val || typeof val !== 'object') return val;
+    try {
+      delete val.adPlacements;
+      delete val.playerAds;
+      delete val.adSlots;
+      delete val.auxiliaryUi;        // bumper / interstitial UI
+      // Strip adPlacements from inner arrays too
+      if (Array.isArray(val.adPlacements)) val.adPlacements = [];
+      if (val.streamingData && val.streamingData.serverAbrStreamingUrl) {
+        // keep streamingData, just remove ad manifest pointers
+      }
+    } catch {}
+    return val;
+  }
+
+  // json-prune: strip sponsored items from ytInitialData feed
+  function pruneInitialData(val) {
+    if (!val || typeof val !== 'object') return val;
+    try {
+      const stripAds = (obj) => {
+        if (!obj || typeof obj !== 'object') return;
+        if (Array.isArray(obj)) {
+          for (let i = obj.length - 1; i >= 0; i--) {
+            const item = obj[i];
+            if (item && typeof item === 'object') {
+              const keys = Object.keys(item);
+              if (keys.some(k =>
+                k.includes('Ad') || k.includes('ad') ||
+                k.includes('promoted') || k.includes('Promoted') ||
+                k.includes('sponsor') || k.includes('Sponsor') ||
+                k === 'searchPyvRenderer' || k === 'carouselAdRenderer'
+              )) {
+                obj.splice(i, 1);
+                continue;
+              }
+              stripAds(item);
+            }
+          }
+        } else {
+          for (const key of Object.keys(obj)) {
+            stripAds(obj[key]);
+          }
+        }
+      };
+      stripAds(val);
+    } catch {}
+    return val;
+  }
+
+  let _ytPlayer;
+  Object.defineProperty(window, 'ytInitialPlayerResponse', {
+    get() { return _ytPlayer; },
+    set(v) { _ytPlayer = prunePlayerResponse(v); },
+    configurable: true,
+  });
+
+  let _ytData;
+  Object.defineProperty(window, 'ytInitialData', {
+    get() { return _ytData; },
+    set(v) { _ytData = pruneInitialData(v); },
+    configurable: true,
+  });
+
+  // set-constant: disable YouTube's internal ads config flags
+  const YT_CONFIG_OVERRIDES = {
+    'yt.ads.disable':          true,
+    'ytAdsEnabled':            false,
+    'ytAdUnit':                null,
+    'googletag':               { cmd: { push: () => {} }, defineSlot: () => ({}), pubads: () => ({ enableSingleRequest: ()=>{}, refresh: ()=>{}, setTargeting: ()=>{} }), display: ()=>{}, enableServices: ()=>{} },
+  };
+  for (const [key, val] of Object.entries(YT_CONFIG_OVERRIDES)) {
+    try {
+      Object.defineProperty(window, key, {
+        get() { return val; },
+        set() {},
+        configurable: true,
+      });
+    } catch {}
+  }
+
+  // Prevent IMA SDK from loading (Google's Interactive Media Ads)
+  Object.defineProperty(window, 'google', {
+    get() { return window._ytlGoogleStub; },
+    set(v) {
+      // Block IMA but allow other Google services
+      if (v && v.ima) {
+        v.ima = {
+          AdDisplayContainer: function() { return { initialize: ()=>{}, destroy: ()=>{} }; },
+          AdsLoader: function() { return { addEventListener: ()=>{}, requestAds: ()=>{}, contentComplete: ()=>{} }; },
+          AdsRequest: function() { return {}; },
+          AdErrorEvent: { Type: { AD_ERROR: 'adError' } },
+          AdEvent: { Type: {} },
+          ViewMode: { NORMAL: 'normal', FULLSCREEN: 'fullscreen' },
+        };
+      }
+      window._ytlGoogleStub = v;
+    },
+    configurable: true,
+  });
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   * 3. COSMETIC FILTERS  (uBlock Origin youtube.com## rules + EasyList)
+   * ═══════════════════════════════════════════════════════════════════════ */
+  const CSS = `
+    /* ── uBlock: video player ad overlays ── */
     .ytp-ad-overlay-container,
     .ytp-ad-overlay-image,
     .ytp-ad-text-overlay,
@@ -83,11 +200,16 @@
     .ytp-ad-preview-container,
     .ytp-ad-preview-slot,
     .ytp-ad-module,
+    .ytp-ad-persistent-progress-bar-container,
+    .ytp-ad-progress,
+    .ytp-ad-progress-list,
+    .ytp-ads-indicator,
     .ad-showing .ytp-ad-module,
     #player-ads,
+    #ad-badge,
     .html5-video-player .ytp-ad-module:not(:empty),
 
-    /* In-feed / sidebar ad slots */
+    /* ── uBlock: in-feed / companion ad renderers ── */
     ytd-display-ad-renderer,
     ytd-promoted-sparkles-web-renderer,
     ytd-promoted-video-renderer,
@@ -103,28 +225,44 @@
     yt-mealbar-promo-renderer,
     ytd-mealbar-promo-renderer,
     ytd-rich-item-renderer[is-slim-media],
+    ytd-promoted-sparkles-text-search-renderer,
+    ytd-player-legacy-desktop-watch-ads-renderer,
+    ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"],
 
-    /* Masthead banner ads */
+    /* ── uBlock: masthead / banner ads ── */
     #masthead-ad,
     ytd-masthead-ad-v4-renderer,
     ytd-masthead-ad-v3-renderer,
+    ytd-masthead-ad-v2-renderer,
 
-    /* Shorts ads */
+    /* ── uBlock: Shorts ads ── */
     ytd-reel-shelf-renderer[is-slim-media],
+    ytd-reel-video-renderer .ytd-display-ad-renderer,
 
-    /* Premium upsell popups */
+    /* ── uBlock: premium upsell / enforcement ── */
     ytd-enforcement-message-view-model,
     ytd-popup-container:has(ytd-mealbar-promo-renderer),
     tp-yt-paper-dialog:has(ytd-mealbar-promo-renderer),
+    ytd-premium-promo-renderer,
+    ytd-modal-with-title-and-button-renderer,
 
-    /* Shopping / promoted */
+    /* ── uBlock: shopping / merch / sponsor cards ── */
     ytd-merch-shelf-renderer,
     ytd-product-list-renderer,
     ytd-sponsorcard-renderer,
+    ytd-brand-video-shelf-renderer,
+    ytd-brand-video-singleton-renderer,
 
-    /* Survey / feedback overlays */
+    /* ── uBlock: survey / feedback overlays ── */
     .ytd-mealbar-promo-renderer,
-    yt-confirm-dialog-renderer:has([href*="premium"]) {
+    yt-confirm-dialog-renderer:has([href*="premium"]),
+
+    /* ── EasyList: Google ad iframes ── */
+    iframe[src*="doubleclick.net"],
+    iframe[src*="googlesyndication.com"],
+    iframe[src*="googleadservices.com"],
+    iframe[id*="google_ads"],
+    ins.adsbygoogle {
       display: none !important;
       visibility: hidden !important;
       pointer-events: none !important;
@@ -135,7 +273,7 @@
       opacity: 0 !important;
     }
 
-    /* Hide "Sponsored" label rows in feed */
+    /* ── Hide sponsored rows in feed ── */
     ytd-rich-item-renderer:has(ytd-display-ad-renderer),
     ytd-rich-item-renderer:has(ytd-promoted-sparkles-web-renderer),
     ytd-rich-item-renderer:has(ytd-promoted-video-renderer) {
@@ -143,35 +281,22 @@
     }
 
     /* ── Block recommendations ── */
-
-    /* Watch page: sidebar "Up Next" / related videos panel */
     ytd-watch-next-secondary-results-renderer,
     #secondary-inner ytd-compact-video-renderer,
     #secondary-inner ytd-compact-playlist-renderer,
     #secondary-inner ytd-compact-radio-renderer,
     #related,
-
-    /* Autoplay countdown overlay */
     .ytp-autonav-endscreen-upnext-container,
     .ytp-endscreen-content,
     .ytp-ce-element,
-
-    /* End screen cards (suggested videos at end) */
     .ytp-cards-teaser,
     .ytp-ce-covering-overlay,
-
-    /* Homepage feed (keep search results, hide home recommendations) */
     ytd-browse[page-subtype="home"] ytd-rich-grid-renderer,
-
-    /* "What to watch next" shelf on home */
-    ytd-rich-shelf-renderer,
-
-    /* Notification dot / bell recommendations */
-    ytd-notification-topbar-button-renderer {
+    ytd-rich-shelf-renderer {
       display: none !important;
     }
 
-    /* Widen video player to fill the space freed by hiding sidebar */
+    /* Widen video when sidebar hidden */
     ytd-watch-flexy[is-two-columns_] #primary {
       max-width: 100% !important;
       width: 100% !important;
@@ -185,13 +310,15 @@
     if (document.getElementById('__ytlite_css__')) return;
     const s = document.createElement('style');
     s.id = '__ytlite_css__';
-    s.textContent = CSS_RULES;
+    s.textContent = CSS;
     (document.head || document.documentElement).appendChild(s);
   }
   injectCSS();
 
-  /* DOM element removal – catches anything CSS misses */
-  const AD_SELECTORS = [
+  /* ═══════════════════════════════════════════════════════════════════════
+   * 4. DOM REMOVAL  — belt-and-suspenders; catches what CSS misses
+   * ═══════════════════════════════════════════════════════════════════════ */
+  const REMOVE_SELS = [
     '.ytp-ad-overlay-container',
     '.ytp-ad-module:not(:empty)',
     '#player-ads:not(:empty)',
@@ -207,99 +334,70 @@
     'ytd-masthead-ad-v3-renderer',
     '#masthead-ad',
     'ytd-enforcement-message-view-model',
+    'ytd-promoted-sparkles-text-search-renderer',
+    'ytd-companion-slot-renderer',
   ];
 
-  function removeAdElements() {
+  function sweepAds() {
     injectCSS();
-    for (const sel of AD_SELECTORS) {
-      document.querySelectorAll(sel).forEach(el => {
-        try { el.remove(); } catch {}
-      });
+    for (const sel of REMOVE_SELS) {
+      try { document.querySelectorAll(sel).forEach(el => el.remove()); } catch {}
     }
   }
 
-  /* Watch the FULL DOM tree for new ad elements */
-  new MutationObserver(removeAdElements).observe(document.documentElement, {
-    childList: true,
-    subtree: true,
+  new MutationObserver(sweepAds).observe(document.documentElement, {
+    childList: true, subtree: true,
   });
 
-  /* ─────────────────────────────────────────────────────────────────────────
-   * 3. VIDEO AD SKIP – click skip button or fast-forward unskippable ads
-   * ───────────────────────────────────────────────────────────────────────── */
-  let skipTick = 0;
-  function skipVideoAd() {
-    const skip = document.querySelector(
+  /* ═══════════════════════════════════════════════════════════════════════
+   * 5. VIDEO AD SKIP  — click skip button; fast-forward unskippable ads
+   * ═══════════════════════════════════════════════════════════════════════ */
+  function skipAd() {
+    const btn = document.querySelector(
       '.ytp-ad-skip-button:not([style*="display: none"]),' +
       '.ytp-skip-ad-button:not([style*="display: none"]),' +
-      '.ytp-ad-skip-button-modern'
+      '.ytp-ad-skip-button-modern:not([style*="display: none"])'
     );
-    if (skip) { skip.click(); return; }
+    if (btn) { btn.click(); return; }
 
-    const adShowing = document.querySelector('.ad-showing');
-    if (adShowing) {
-      const video = document.querySelector('video');
-      if (video && isFinite(video.duration) && video.duration > 0.5) {
-        video.currentTime = video.duration;
-        if (video.paused) video.play().catch(() => {});
+    if (document.querySelector('.ad-showing')) {
+      const v = document.querySelector('video');
+      if (v && isFinite(v.duration) && v.duration > 0.5) {
+        v.muted = true;
+        v.currentTime = v.duration;
+        v.play().catch(() => {});
       }
     }
 
-    if (++skipTick % 20 === 0) {
-      document.querySelector('.ytp-ad-overlay-close-button')?.click();
-    }
+    // Close banner / overlay ads
+    document.querySelector('.ytp-ad-overlay-close-button')?.click();
+    document.querySelector('.ytp-ad-skip-button-container button')?.click();
   }
-  setInterval(skipVideoAd, 150);
+  setInterval(skipAd, 150);
 
-  /* ─────────────────────────────────────────────────────────────────────────
-   * 4. SCRIPT DEFUSER – strip ad data from YouTube's player bootstrap
-   * ───────────────────────────────────────────────────────────────────────── */
-  function stripAds(val) {
-    if (val && typeof val === 'object') {
-      try {
-        delete val.adPlacements;
-        delete val.playerAds;
-        delete val.adSlots;
-      } catch {}
-    }
-    return val;
-  }
+  /* ═══════════════════════════════════════════════════════════════════════
+   * 6. YOUTUBE INNERTUBE API PATCH
+   *    Intercept fetch calls to /youtubei/v1/player and strip ad data
+   * ═══════════════════════════════════════════════════════════════════════ */
+  const _fetchFinal = window.fetch;
+  window.fetch = function (input, init) {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (isAdURL(url)) return Promise.resolve(new Response('', { status: 200 }));
 
-  let _ytInitial;
-  Object.defineProperty(window, 'ytInitialPlayerResponse', {
-    get() { return _ytInitial; },
-    set(val) { _ytInitial = stripAds(val); },
-    configurable: true,
-  });
-
-  let _ytData;
-  Object.defineProperty(window, 'ytInitialData', {
-    get() { return _ytData; },
-    set(val) {
-      if (val && val.contents) {
-        try {
-          // Strip ad items from homepage / search feed
-          const stripFromArray = (arr) => {
-            if (!Array.isArray(arr)) return;
-            for (let i = arr.length - 1; i >= 0; i--) {
-              const item = arr[i];
-              if (item && (item.promotedSparklesTextSearchRenderer ||
-                  item.searchPyvRenderer || item.displayAd ||
-                  item.carouselAdRenderer)) {
-                arr.splice(i, 1);
-              }
-            }
-          };
-          const tabs = val.contents?.twoColumnBrowseResultsRenderer?.tabs;
-          if (tabs) tabs.forEach(t => {
-            const items = t?.tabRenderer?.content?.richGridRenderer?.contents;
-            if (items) stripFromArray(items);
+    // Intercept player API response to strip ads
+    if (url.includes('/youtubei/v1/player') || url.includes('/youtubei/v1/next')) {
+      return _fetchFinal.apply(this, arguments).then(res => {
+        const clone = res.clone();
+        return clone.json().then(json => {
+          prunePlayerResponse(json);
+          return new Response(JSON.stringify(json), {
+            status: res.status,
+            headers: res.headers,
           });
-        } catch {}
-      }
-      _ytData = val;
-    },
-    configurable: true,
-  });
+        }).catch(() => res);
+      });
+    }
+    return _fetchFinal.apply(this, arguments);
+  };
 
 })();
